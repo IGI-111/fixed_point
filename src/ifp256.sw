@@ -19,15 +19,26 @@ impl IFP256 {
     /// Creates a new IFP256 from a raw u256 value
     /// The value is assumed to already be in the correct format with sign bit
     pub fn from_raw(value: u256) -> Self {
-        Self { value }
+        let magnitude = value & SIGN_MASK;
+        if magnitude == u256::zero() {
+            // Force positive zero
+            Self { value: u256::zero() }
+        } else {
+            Self { value }
+        }
     }
 
     /// Creates a new IFP256 from a whole number and sign
     pub fn from_u256(value: u256, negative: bool) -> Self {
-        let scaled = value * SCALE;
-        let sign_bit = if negative { SIGN_BIT } else { u256::zero() };
-        Self {
-            value: scaled | sign_bit
+        if value == u256::zero() {
+            // Force positive zero regardless of requested sign
+            Self { value: u256::zero() }
+        } else {
+            let scaled = value * SCALE;
+            let sign_bit = if negative { SIGN_BIT } else { u256::zero() };
+            Self {
+                value: scaled | sign_bit
+            }
         }
     }
 
@@ -40,20 +51,36 @@ impl IFP256 {
             decimal_part * u256::from(10u64).pow(18u32 - decimal_places)
         };
         let absolute_value = whole_scaled + decimal_scaled;
-        let sign_bit = if negative { SIGN_BIT } else { u256::zero() };
-        Self {
-            value: absolute_value | sign_bit
+        
+        if absolute_value == u256::zero() {
+            // Force positive zero regardless of requested sign
+            Self { value: u256::zero() }
+        } else {
+            let sign_bit = if negative { SIGN_BIT } else { u256::zero() };
+            Self {
+                value: absolute_value | sign_bit
+            }
         }
-    }
-
-    /// Returns true if this number is negative
-    pub fn is_negative(self) -> bool {
-        (self.value & SIGN_BIT) != u256::zero()
     }
 
     /// Returns the absolute value (magnitude) of the number
     pub fn abs_value(self) -> u256 {
         self.value & SIGN_MASK
+    }
+
+    /// Returns true if this number is negative
+    pub fn is_negative(self) -> bool {
+        self.abs_value() != u256::zero() && (self.value & SIGN_BIT) != u256::zero()
+    }
+
+    /// Returns true if this number is zero
+    pub fn is_zero(self) -> bool {
+        self.abs_value() == u256::zero()
+    }
+
+    /// Return zero, which is canonically positive
+    pub fn zero(self) -> Self {
+        Self::from_u256(0, false)
     }
 
     /// Returns the raw underlying value including sign bit
@@ -80,24 +107,32 @@ impl IFP256 {
 
     /// Adds two signed fixed point numbers
     pub fn add(self, other: Self) -> Self {
+        if self.is_zero() {
+            return other;
+        }
+        if other.is_zero() {
+            return self;
+        }
+        // Rest of addition logic remains the same
         if self.is_negative() == other.is_negative() {
-            // Same signs - add absolute values and keep sign
             let sum = self.abs_value() + other.abs_value();
             Self {
                 value: sum | (self.value & SIGN_BIT)
             }
         } else {
-            // Different signs - subtract smaller absolute value from larger
             let self_abs = self.abs_value();
             let other_abs = other.abs_value();
             
             if self_abs >= other_abs {
-                // Result has same sign as self
-                Self {
-                    value: (self_abs - other_abs) | (self.value & SIGN_BIT)
+                let diff = self_abs - other_abs;
+                if diff == u256::zero() {
+                    Self { value: u256::zero() }  // Canonical zero
+                } else {
+                    Self {
+                        value: diff | (self.value & SIGN_BIT)
+                    }
                 }
             } else {
-                // Result has same sign as other
                 Self {
                     value: (other_abs - self_abs) | (other.value & SIGN_BIT)
                 }
@@ -112,22 +147,30 @@ impl IFP256 {
 
     /// Multiplies two signed fixed point numbers
     pub fn mul(self, other: Self) -> Self {
-        // Result is negative if signs are different
+        if self.is_zero() || other.is_zero() {
+            return Self { value: u256::zero() };  // Canonical zero
+        }
+        
         let result_negative = self.is_negative() != other.is_negative();
-        
-        // Multiply absolute values
         let result = self.abs_value() * other.abs_value();
-        let scaled_result = (result + HALF_SCALE) / SCALE;  // Round to nearest
+        let scaled_result = (result + HALF_SCALE) / SCALE;
         
-        // Apply sign
-        let sign_bit = if result_negative { SIGN_BIT } else { u256::zero() };
-        Self {
-            value: scaled_result | sign_bit
+        if scaled_result == u256::zero() {
+            Self { value: u256::zero() }  // Canonical zero
+        } else {
+            let sign_bit = if result_negative { SIGN_BIT } else { u256::zero() };
+            Self {
+                value: scaled_result | sign_bit
+            }
         }
     }
 
     /// Divides self by other
     pub fn div(self, other: Self) -> Self {
+        if self.is_zero() {
+            return Self { value: u256::zero() };  // Canonical zero
+        }
+
         // Result is negative if signs are different
         let result_negative = self.is_negative() != other.is_negative();
         
@@ -180,7 +223,12 @@ impl IFP256 {
             whole
         };
         
-        (rounded, self.is_negative())
+        if rounded == u256::zero() {
+            // 0 is canonically positive
+            (0, false)
+        } else {
+            (rounded, self.is_negative())
+        }
     }
 }
 
@@ -227,4 +275,45 @@ fn test_signed_fixed_point() {
     assert(half.gt(neg_one));
     assert(neg_one.lt(half));
     assert(one.eq(one));
+}
+
+#[test]
+fn test_zero_handling() {
+    // Test zero construction
+    let zero_positive = IFP256::from_u256(u256::zero(), false);
+    let zero_negative = IFP256::from_u256(u256::zero(), true);
+    
+    // Test canonical representation
+    assert(zero_positive.raw_value() == zero_negative.raw_value());
+    assert(zero_positive.raw_value() == u256::zero());
+    assert(!zero_positive.is_negative());
+    assert(!zero_negative.is_negative());
+    
+    // Test equality
+    assert(zero_positive.eq(zero_negative));
+    
+    // Test arithmetic with zero
+    let one = IFP256::from_u256(0x1, false);
+    let neg_one = IFP256::from_u256(0x1, true);
+    
+    // Addition
+    assert(zero_positive.add(one).eq(one));
+    assert(zero_negative.add(one).eq(one));
+    assert(one.add(zero_positive).eq(one));
+    assert(neg_one.add(zero_negative).eq(neg_one));
+    
+    // Multiplication
+    assert(zero_positive.mul(one).eq(zero_positive));
+    assert(zero_negative.mul(neg_one).eq(zero_positive));
+    assert(one.mul(zero_positive).eq(zero_positive));
+
+    // Division
+    assert(zero_positive.mul(one).eq(zero_positive));
+    assert(zero_negative.mul(one).eq(zero_positive));
+    assert(zero_positive.mul(neg_one).eq(zero_positive));
+    assert(zero_negative.mul(neg_one).eq(zero_positive));
+    
+    // Subtraction that results in zero
+    assert(one.sub(one).eq(zero_positive));
+    assert(neg_one.sub(neg_one).eq(zero_positive));
 }

@@ -40,6 +40,10 @@ impl UFP256 {
         }
     }
 
+    pub fn zero(self) -> Self {
+        Self::from_u256(0)
+    }
+
     /// Returns the raw underlying value
     pub fn raw_value(self) -> u256 {
         self.value
