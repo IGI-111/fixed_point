@@ -120,7 +120,7 @@ impl IFP256 {
     }
 
     /// Negates the number
-    fn neg(self) -> Self {
+    pub fn neg(self) -> Self {
         Self {
             value: self.abs_value() | (!self.value & SIGN_BIT)
         }
