@@ -66,7 +66,7 @@ impl IFP256 {
     }
 
     /// Return zero, which is canonically positive
-    pub fn zero(self) -> Self {
+    pub fn zero() -> Self {
         Self::from_u256(0, false)
     }
 

@@ -42,7 +42,7 @@ impl UFP256 {
         }
     }
 
-    pub fn zero(self) -> Self {
+    pub fn zero() -> Self {
         Self::from_u256(0)
     }
 
