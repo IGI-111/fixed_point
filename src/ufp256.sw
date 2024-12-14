@@ -1,5 +1,7 @@
 library;
 
+use core::ops::*;
+
 /// Represents a fixed point number with 18 decimal places of precision
 /// Internally stored as a u256 where the value is multiplied by 10^18
 pub struct UFP256 {
@@ -59,53 +61,6 @@ impl UFP256 {
         self.value % SCALE
     }
 
-    /// Adds two fixed point numbers
-    pub fn add(self, other: Self) -> Self {
-        Self {
-            value: self.value + other.value
-        }
-    }
-
-    /// Subtracts two fixed point numbers
-    pub fn sub(self, other: Self) -> Self {
-        Self {
-            value: self.value - other.value
-        }
-    }
-
-    /// Multiplies two fixed point numbers
-    pub fn mul(self, other: Self) -> Self {
-        // Perform multiplication and then divide by SCALE to maintain fixed point
-        let result = self.value * other.value;
-        Self {
-            value: (result + HALF_SCALE) / SCALE  // Round to nearest
-        }
-    }
-
-    /// Divides two fixed point numbers
-    pub fn div(self, other: Self) -> Self {
-        // Multiply by SCALE first to maintain precision
-        let result = (self.value * SCALE + HALF_SCALE) / other.value;
-        Self {
-            value: result
-        }
-    }
-
-    /// Returns true if this value is greater than other
-    pub fn gt(self, other: Self) -> bool {
-        self.value > other.value
-    }
-
-    /// Returns true if this value is less than other
-    pub fn lt(self, other: Self) -> bool {
-        self.value < other.value
-    }
-
-    /// Returns true if this value is equal to other
-    pub fn eq(self, other: Self) -> bool {
-        self.value == other.value
-    }
-
     /// Rounds the fixed point number to the nearest whole number
     pub fn round(self) -> u256 {
         let decimal = self.decimal_part();
@@ -125,6 +80,65 @@ impl From<u256> for UFP256 {
     }
 }
 
+impl Add for UFP256 {
+    /// Adds two fixed point numbers
+    fn add(self, other: Self) -> Self {
+        Self {
+            value: self.value + other.value
+        }
+    }
+}
+
+impl Subtract for UFP256 {
+    /// Subtracts two fixed point numbers
+    fn subtract(self, other: Self) -> Self {
+        Self {
+            value: self.value - other.value
+        }
+    }
+}
+
+impl Multiply for UFP256 {
+    /// Multiplies two fixed point numbers
+    fn multiply(self, other: Self) -> Self {
+        // Perform multiplication and then divide by SCALE to maintain fixed point
+        let result = self.value * other.value;
+        Self {
+            value: (result + HALF_SCALE) / SCALE  // Round to nearest
+        }
+    }
+}
+
+impl Divide for UFP256 {
+    /// Divides two fixed point numbers
+    fn divide(self, other: Self) -> Self {
+        // Multiply by SCALE first to maintain precision
+        let result = (self.value * SCALE + HALF_SCALE) / other.value;
+        Self {
+            value: result
+        }
+    }
+}
+
+impl Ord for UFP256 {
+    /// Returns true if this value is greater than other
+    fn gt(self, other: Self) -> bool {
+        self.value > other.value
+    }
+
+    /// Returns true if this value is less than other
+    fn lt(self, other: Self) -> bool {
+        self.value < other.value
+    }
+}
+
+impl Eq for UFP256 {
+    /// Returns true if this value is equal to other
+    fn eq(self, other: Self) -> bool {
+        self.value == other.value
+    }
+}
+
 
 #[test]
 fn test_fixed_point() {
@@ -134,34 +148,34 @@ fn test_fixed_point() {
     let half = UFP256::from_parts(0x0, 0x5, 1);
 
     // Test addition
-    let three = two.add(one);
+    let three = two + one;
     assert_eq(three.floor(), u256::from(3u64));
 
     // Test multiplication
-    let result = two.mul(half);
+    let result = two * half;
     assert_eq(result.floor(), u256::from(1u64));
 
     // Test division
-    let result = one.div(two);
+    let result = one / two;
     assert_eq(result.decimal_part(), HALF_SCALE);
 
     // Test comparison
-    assert(two.gt(one));
-    assert(half.lt(one));
-    assert(one.eq(one));
+    assert(two > one);
+    assert(half < one);
+    assert(one == one);
 
 
     // 6.4789374 * 38 = 246.1996212 
     let term1 = UFP256::from_parts(0x6, 0x49147E, 7);
     let term2 = UFP256::from_u256(0x26);
-    let res = term1.mul(term2);
+    let res = term1 * term2;
     let expected = UFP256::from_parts(0xF6, 0x1E75B4, 7);
-    assert(res.eq(expected));
+    assert(res == expected);
     
     // // 6.4789374 * 38 + 23.1 = 269.299621
     let term3 = UFP256::from_parts(0x17, 0x1, 1);
-    let res = res.add(term3);
+    let res = res + term3;
     let expected = UFP256::from_parts(0x10D, 0x2DB7F4, 7);
-    assert(res.eq(expected));
+    assert(res == expected);
     
 }

@@ -1,5 +1,7 @@
 library;
 
+use core::ops::*;
+
 /// Represents a signed fixed point number with 18 decimal places of precision
 /// Internally stored as a u256 where:
 /// - The highest bit (255) is used as the sign bit (0 for positive, 1 for negative)
@@ -63,21 +65,6 @@ impl IFP256 {
         }
     }
 
-    /// Returns the absolute value (magnitude) of the number
-    pub fn abs_value(self) -> u256 {
-        self.value & SIGN_MASK
-    }
-
-    /// Returns true if this number is negative
-    pub fn is_negative(self) -> bool {
-        self.abs_value() != u256::zero() && (self.value & SIGN_BIT) != u256::zero()
-    }
-
-    /// Returns true if this number is zero
-    pub fn is_zero(self) -> bool {
-        self.abs_value() == u256::zero()
-    }
-
     /// Return zero, which is canonically positive
     pub fn zero(self) -> Self {
         Self::from_u256(0, false)
@@ -86,6 +73,16 @@ impl IFP256 {
     /// Returns the raw underlying value including sign bit
     pub fn raw_value(self) -> u256 {
         self.value
+    }
+
+    /// Returns the absolute value (magnitude) of the number
+    pub fn abs_value(self) -> u256 {
+        self.value & SIGN_MASK
+    }
+
+    /// Returns true if this number is zero
+    pub fn is_zero(self) -> bool {
+        self.abs_value() == u256::zero()
     }
 
     /// Returns the integer part of the absolute value
@@ -98,15 +95,47 @@ impl IFP256 {
         self.abs_value() % SCALE
     }
 
+    /// Rounds to the nearest whole number, preserving sign
+    pub fn round(self) -> (u256, bool) {
+        let decimal = self.decimal_part();
+        let whole = self.floor();
+        
+        let rounded = if decimal >= HALF_SCALE {
+            whole + 1
+        } else {
+            whole
+        };
+        
+        if rounded == u256::zero() {
+            // 0 is canonically positive
+            (0, false)
+        } else {
+            (rounded, self.is_negative())
+        }
+    }
+
+    /// Returns true if absolute value of self is greater than absolute value of other
+    pub fn abs_gt(self, other: Self) -> bool {
+        self.abs_value() > other.abs_value()
+    }
+
     /// Negates the number
-    pub fn negate(self) -> Self {
+    fn neg(self) -> Self {
         Self {
             value: self.abs_value() | (!self.value & SIGN_BIT)
         }
     }
 
+    /// Returns true if this number is negative
+    pub fn is_negative(self) -> bool {
+        self.abs_value() != u256::zero() && (self.value & SIGN_BIT) != u256::zero()
+    }
+}
+
+
+impl Add for IFP256 {
     /// Adds two signed fixed point numbers
-    pub fn add(self, other: Self) -> Self {
+    fn add(self, other: Self) -> Self {
         if self.is_zero() {
             return other;
         }
@@ -139,14 +168,18 @@ impl IFP256 {
             }
         }
     }
+}
 
+impl Subtract for IFP256 {
     /// Subtracts other from self
-    pub fn sub(self, other: Self) -> Self {
-        self.add(other.negate())
+    fn subtract(self, other: Self) -> Self {
+        self.add(other.neg())
     }
+}
 
+impl Multiply for IFP256 {
     /// Multiplies two signed fixed point numbers
-    pub fn mul(self, other: Self) -> Self {
+    fn multiply(self, other: Self) -> Self {
         if self.is_zero() || other.is_zero() {
             return Self { value: u256::zero() };  // Canonical zero
         }
@@ -164,9 +197,11 @@ impl IFP256 {
             }
         }
     }
+}
 
+impl Divide for IFP256 {
     /// Divides self by other
-    pub fn div(self, other: Self) -> Self {
+    fn divide(self, other: Self) -> Self {
         if self.is_zero() {
             return Self { value: u256::zero() };  // Canonical zero
         }
@@ -183,52 +218,12 @@ impl IFP256 {
             value: result | sign_bit
         }
     }
+}
 
-    /// Returns true if absolute value of self is greater than absolute value of other
-    pub fn abs_gt(self, other: Self) -> bool {
-        self.abs_value() > other.abs_value()
-    }
-
-    /// Returns true if self is greater than other, considering signs
-    pub fn gt(self, other: Self) -> bool {
-        if self.is_negative() != other.is_negative() {
-            !self.is_negative()
-        } else {
-            if self.is_negative() {
-                self.abs_value() < other.abs_value()
-            } else {
-                self.abs_value() > other.abs_value()
-            }
-        }
-    }
-
-    /// Returns true if self is less than other, considering signs
-    pub fn lt(self, other: Self) -> bool {
-        !self.gt(other) && !self.eq(other)
-    }
-
+impl Eq for IFP256 {
     /// Returns true if self equals other
-    pub fn eq(self, other: Self) -> bool {
+    fn eq(self, other: Self) -> bool {
         self.value == other.value
-    }
-
-    /// Rounds to the nearest whole number, preserving sign
-    pub fn round(self) -> (u256, bool) {
-        let decimal = self.decimal_part();
-        let whole = self.floor();
-        
-        let rounded = if decimal >= HALF_SCALE {
-            whole + 1
-        } else {
-            whole
-        };
-        
-        if rounded == u256::zero() {
-            // 0 is canonically positive
-            (0, false)
-        } else {
-            (rounded, self.is_negative())
-        }
     }
 }
 
@@ -237,6 +232,31 @@ impl From<u256> for IFP256 {
         IFP256::from_u256(val, false)
     }
 }
+
+impl Ord for IFP256 {
+    /// Returns true if self is less than other, considering signs
+    fn lt(self, other: Self) -> bool {
+        !gt_inner(self, other) && !(self == other)
+    }
+
+    /// Returns true if self is greater than other, considering signs
+    fn gt(self, other: Self) -> bool {
+        gt_inner(self, other)
+    }
+}
+
+fn gt_inner(a: IFP256, b: IFP256) -> bool {
+    if a.is_negative() != b.is_negative() {
+        !a.is_negative()
+    } else {
+        if a.is_negative() {
+            a.abs_value() < b.abs_value()
+        } else {
+            a.abs_value() > b.abs_value()
+        }
+    }
+}
+
 
 #[test]
 fn test_signed_fixed_point() {
@@ -251,30 +271,30 @@ fn test_signed_fixed_point() {
     assert(neg_one.is_negative());
 
     // Test addition with same signs
-    let three = two.add(one);
+    let three = two + one;
     assert(three.floor() == u256::from(3u64));
     assert(!three.is_negative());
 
     // Test addition with different signs
-    let result = one.add(neg_one);
+    let result = one + neg_one;
     assert(result.floor() == u256::from(0u64));
 
     // Test multiplication
-    let neg_result = two.mul(neg_one);
+    let neg_result = two * neg_one;
     assert(neg_result.is_negative());
     assert(neg_result.floor() == u256::from(2u64));
 
     // Test division
-    let div_result = one.div(two);
+    let div_result = one / two;
     assert(div_result.decimal_part() == HALF_SCALE);
     assert(!div_result.is_negative());
 
     // Test comparison
-    assert(two.gt(one));
-    assert(one.gt(half));
-    assert(half.gt(neg_one));
-    assert(neg_one.lt(half));
-    assert(one.eq(one));
+    assert(two > one);
+    assert(one > half);
+    assert(half > neg_one);
+    assert(neg_one < half);
+    assert(one == one);
 }
 
 #[test]
@@ -290,30 +310,30 @@ fn test_zero_handling() {
     assert(!zero_negative.is_negative());
     
     // Test equality
-    assert(zero_positive.eq(zero_negative));
+    assert(zero_positive == zero_negative);
     
     // Test arithmetic with zero
     let one = IFP256::from_u256(0x1, false);
     let neg_one = IFP256::from_u256(0x1, true);
     
     // Addition
-    assert(zero_positive.add(one).eq(one));
-    assert(zero_negative.add(one).eq(one));
-    assert(one.add(zero_positive).eq(one));
-    assert(neg_one.add(zero_negative).eq(neg_one));
+    assert(zero_positive + one == one);
+    assert(zero_negative + one == one);
+    assert(one + zero_positive == one);
+    assert(neg_one + zero_negative == neg_one);
     
     // Multiplication
-    assert(zero_positive.mul(one).eq(zero_positive));
-    assert(zero_negative.mul(neg_one).eq(zero_positive));
-    assert(one.mul(zero_positive).eq(zero_positive));
+    assert(zero_positive * one == zero_positive);
+    assert(zero_negative * neg_one == zero_positive);
+    assert(one * zero_positive == zero_positive);
 
     // Division
-    assert(zero_positive.mul(one).eq(zero_positive));
-    assert(zero_negative.mul(one).eq(zero_positive));
-    assert(zero_positive.mul(neg_one).eq(zero_positive));
-    assert(zero_negative.mul(neg_one).eq(zero_positive));
+    assert(zero_positive * one == zero_positive);
+    assert(zero_negative * one == zero_positive);
+    assert(zero_positive * neg_one == zero_positive);
+    assert(zero_negative * neg_one == zero_positive);
     
     // Subtraction that results in zero
-    assert(one.sub(one).eq(zero_positive));
-    assert(neg_one.sub(neg_one).eq(zero_positive));
+    assert(one - one == zero_positive);
+    assert(neg_one - neg_one == zero_positive);
 }
