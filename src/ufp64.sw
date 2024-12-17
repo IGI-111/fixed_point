@@ -2,40 +2,40 @@ library;
 
 use core::ops::*;
 
-/// Represents a fixed point number with 18 decimal places of precision
-/// Internally stored as a u256 where the value is multiplied by 10^18
-pub struct UFP256 {
-    // The raw u256 value, scaled by SCALE
-    value: u256,
+/// Represents a fixed point number with 6 decimal places of precision
+/// Internally stored as a u64 where the value is multiplied by 10^6
+pub struct UFP64 {
+    // The raw u64 value, scaled by SCALE
+    value: u64,
 }
 
 /// Constants used throughout the implementation
-pub const SCALE: u256 =      0xDE0B6B3A7640000; // 10^18
-pub const HALF_SCALE: u256 = 0x6F05B59D3B20000; // 10^18 / 2
+pub const SCALE: u64 =      1_000_000; // 10^6
+pub const HALF_SCALE: u64 = 500_000;   // 10^6 / 2
 
 
-impl UFP256 {
-    /// Creates a new UFP256 from a raw u256 value
+impl UFP64 {
+    /// Creates a new UFP64 from a raw u64 value
     /// The value is assumed to already be scaled by SCALE
-    pub fn from_raw(value: u256) -> Self {
+    pub fn from_raw(value: u64) -> Self {
         Self { value }
     }
 
-    /// Creates a new UFP256 from a whole number
-    pub fn from_u256(value: u256) -> Self {
+    /// Creates a new UFP64 from a whole number
+    pub fn from_u64(value: u64) -> Self {
         Self {
             value: value * SCALE
         }
     }
 
-    /// Creates a new UFP256 from separate whole and decimal parts
+    /// Creates a new UFP64 from separate whole and decimal parts
     /// decimal_places specifies how many decimal places are in the decimal_part
-    pub fn from_parts(whole: u256, decimal_part: u256, decimal_places: u32) -> Self {
+    pub fn from_parts(whole: u64, decimal_part: u64, decimal_places: u32) -> Self {
         let whole_scaled = whole * SCALE;
-        let decimal_scaled = if decimal_places >= 18 {
-            decimal_part / u256::from(10u64).pow(decimal_places - 18)
+        let decimal_scaled = if decimal_places >= 6 {
+            decimal_part / 10.pow(decimal_places - 6)
         } else {
-            decimal_part * u256::from(10u64).pow(18u32 - decimal_places)
+            decimal_part * 10.pow(6u32 - decimal_places)
         };
         Self {
             value: whole_scaled + decimal_scaled
@@ -43,26 +43,26 @@ impl UFP256 {
     }
 
     pub fn zero() -> Self {
-        Self::from_u256(0)
+        Self::from_u64(0)
     }
 
     /// Returns the raw underlying value
-    pub fn raw_value(self) -> u256 {
+    pub fn raw_value(self) -> u64 {
         self.value
     }
 
     /// Returns the integer part of the fixed point number
-    pub fn floor(self) -> u256 {
+    pub fn floor(self) -> u64 {
         self.value / SCALE
     }
 
     /// Returns the decimal part as a number between 0 and SCALE-1
-    pub fn decimal_part(self) -> u256 {
+    pub fn decimal_part(self) -> u64 {
         self.value % SCALE
     }
 
     /// Rounds the fixed point number to the nearest whole number
-    pub fn round(self) -> u256 {
+    pub fn round(self) -> u64 {
         let decimal = self.decimal_part();
         let whole = self.floor();
         
@@ -74,13 +74,13 @@ impl UFP256 {
     }
 }
 
-impl From<u256> for UFP256 {
-    fn from(val: u256) -> UFP256 {
-        UFP256::from_u256(val)
+impl From<u64> for UFP64 {
+    fn from(val: u64) -> UFP64 {
+        UFP64::from_u64(val)
     }
 }
 
-impl Add for UFP256 {
+impl Add for UFP64 {
     /// Adds two fixed point numbers
     fn add(self, other: Self) -> Self {
         Self {
@@ -89,7 +89,7 @@ impl Add for UFP256 {
     }
 }
 
-impl Subtract for UFP256 {
+impl Subtract for UFP64 {
     /// Subtracts two fixed point numbers
     fn subtract(self, other: Self) -> Self {
         Self {
@@ -98,18 +98,20 @@ impl Subtract for UFP256 {
     }
 }
 
-impl Multiply for UFP256 {
+impl Multiply for UFP64 {
     /// Multiplies two fixed point numbers
     fn multiply(self, other: Self) -> Self {
         // Perform multiplication and then divide by SCALE to maintain fixed point
-        let result = self.value * other.value;
+        let a = self.value * other.value;
+        let a = a + HALF_SCALE;
+        let result = ( a) / SCALE;
         Self {
-            value: (result + HALF_SCALE) / SCALE  // Round to nearest
+            value: result
         }
     }
 }
 
-impl Divide for UFP256 {
+impl Divide for UFP64 {
     /// Divides two fixed point numbers
     fn divide(self, other: Self) -> Self {
         // Multiply by SCALE first to maintain precision
@@ -120,7 +122,7 @@ impl Divide for UFP256 {
     }
 }
 
-impl Ord for UFP256 {
+impl Ord for UFP64 {
     /// Returns true if this value is greater than other
     fn gt(self, other: Self) -> bool {
         self.value > other.value
@@ -132,28 +134,27 @@ impl Ord for UFP256 {
     }
 }
 
-impl Eq for UFP256 {
+impl Eq for UFP64 {
     /// Returns true if this value is equal to other
     fn eq(self, other: Self) -> bool {
         self.value == other.value
     }
 }
 
-
 #[test]
 fn test_fixed_point() {
     // Test basic creation and arithmetic
-    let one = UFP256::from_u256(0x1);
-    let two = UFP256::from_u256(0x2);
-    let half = UFP256::from_parts(0x0, 0x5, 1);
+    let one = UFP64::from_u64(1);
+    let two = UFP64::from_u64(2);
+    let half = UFP64::from_parts(0, 5, 1);
 
     // Test addition
     let three = two + one;
-    assert_eq(three.floor(), u256::from(3u64));
+    assert_eq(three.floor(), u64::from(3u64));
 
     // Test multiplication
     let result = two * half;
-    assert_eq(result.floor(), u256::from(1u64));
+    assert_eq(result.floor(), u64::from(1u64));
 
     // Test division
     let result = one / two;
@@ -164,18 +165,16 @@ fn test_fixed_point() {
     assert(half < one);
     assert(one == one);
 
-
-    // 6.4789374 * 38 = 246.1996212 
-    let term1 = UFP256::from_parts(0x6, 0x49147E, 7);
-    let term2 = UFP256::from_u256(0x26);
+    // 6.47893 * 38 = 246.19934 
+    let term1 = UFP64::from_parts(6, 47893, 5);
+    let term2 = UFP64::from_u64(38);
     let res = term1 * term2;
-    let expected = UFP256::from_parts(0xF6, 0x1E75B4, 7);
+    let expected = UFP64::from_parts(246, 19934, 5);
     assert(res == expected);
     
-    // 6.4789374 * 38 + 23.1 = 269.2996212
-    let term3 = UFP256::from_parts(0x17, 0x1, 1);
+    // 6.47893 * 38 + 23.1 = 269.29934
+    let term3 = UFP64::from_parts(23, 1, 1);
     let res = res + term3;
-    let expected = UFP256::from_parts(0x10D, 0x2DB7F4, 7);
+    let expected = UFP64::from_parts(269, 29934, 5);
     assert(res == expected);
-    
 }
