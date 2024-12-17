@@ -72,6 +72,7 @@ impl UFP64 {
             whole
         }
     }
+
 }
 
 impl From<u64> for UFP64 {
@@ -141,6 +142,40 @@ impl Eq for UFP64 {
     }
 }
 
+impl UFP64 {
+    /// Computes the square root using Newton-Raphson method
+    /// Returns None if the input is zero
+    /// Performs 4 iterations which gives sufficient precision for 6 decimal places
+    pub fn sqrt(self) -> Option<Self> {
+        if self.value == 0 {
+            return None;
+        }
+
+        // Initial guess: scale the input down by SCALE to account for fixed point,
+        // take the square root, then scale back up
+        let mut x = UFP64::from_raw((self.value * SCALE).sqrt());
+        
+        // Newton-Raphson iterations: x = (x + n/x) / 2
+        // Where n is our input number
+        // We do 4 iterations which gives us sufficient precision
+        let mut i = 0;
+        while i < 4 {
+            // Calculate n/x
+            let div = self/x;
+            // Add x + n/x
+            let sum = x + div;
+            // Divide by 2
+            x = UFP64::from_raw((sum.value + 1) >> 1);
+
+            i+=1;
+        }
+
+        Some(x)
+    }
+}
+
+
+
 #[test]
 fn test_fixed_point() {
     // Test basic creation and arithmetic
@@ -177,4 +212,36 @@ fn test_fixed_point() {
     let res = res + term3;
     let expected = UFP64::from_parts(269, 29934, 5);
     assert(res == expected);
+}
+
+
+#[test]
+fn test_sqrt() {
+    // Test perfect squares
+    let four = UFP64::from_u64(4);
+    let two = UFP64::from_u64(2);
+    assert_eq(four.sqrt().unwrap(), two);
+
+    // Test with decimal places
+    let n = UFP64::from_parts(2, 25, 2); // 2.25
+    let expected = UFP64::from_parts(1, 5, 1); // 1.5
+    let result = n.sqrt().unwrap();
+    assert_eq(result, expected);
+
+    // Test larger number
+    let n = UFP64::from_parts(123, 456789, 6); // 123.456789
+    let result = n.sqrt().unwrap();
+    let expected = UFP64::from_parts(11, 111111, 6); // ~11.111111
+    // Allow small margin of error due to rounding
+    assert(result.value - expected.value < 10);
+
+    // Test sqrt(2)
+    let n = UFP64::from_u64(2); // 123.456789
+    let result = n.sqrt().unwrap();
+    let expected = UFP64::from_parts(1, 414213, 6); // ~1.41421356
+   // Allow small margin of error due to rounding
+    assert(result.value - expected.value < 100);
+
+    // Test zero
+    assert_eq(UFP64::zero().sqrt(), None);
 }
